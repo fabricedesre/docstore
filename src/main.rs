@@ -141,6 +141,7 @@ async fn main() -> Result<()> {
                 println!("Successfully stored {}", file_name);
 
                 list_dir(dir, &forest, store).await?;
+                dir.as_node().store(&mut forest, store, rng).await?;
             }
         } else if arg == "get" {
             if let Some(file_name) = std::env::args().nth(2) {
