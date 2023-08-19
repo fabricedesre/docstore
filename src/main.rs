@@ -29,6 +29,9 @@ async fn init_forest(
     let access_key = dir.as_node().store(forest, store, rng).await?;
     let forest_cid = forest.store(store).await?;
 
+    // Save the initial access key.
+    to_cbor("access.key", &access_key).await?;
+
     Ok((forest_cid, access_key))
 }
 
@@ -109,7 +112,7 @@ async fn main() -> Result<()> {
     let rng = &mut thread_rng();
 
     // Initialize the forest and access key from serialized ones if possible.
-    let (forest_cid, mut access_key) =
+    let (forest_cid, access_key) =
         match (from_cbor("forest.cid").await, from_cbor("access.key").await) {
             (Ok(cid), Ok(access_key)) => {
                 println!("Using existing access key");
@@ -119,7 +122,12 @@ async fn main() -> Result<()> {
         };
 
     let mut forest = HamtForest::load(&forest_cid, store).await?;
-    let mut dir = PrivateNode::load(&access_key, &forest, store, None).await?;
+
+    // Get the latest version of the root node.
+    let mut dir = PrivateNode::load(&access_key, &forest, store, None)
+        .await?
+        .search_latest(&forest, store)
+        .await?;
 
     let dir = dir.as_dir_mut()?;
 
@@ -133,8 +141,6 @@ async fn main() -> Result<()> {
                 println!("Successfully stored {}", file_name);
 
                 list_dir(dir, &forest, store).await?;
-
-                access_key = dir.as_node().store(&mut forest, store, rng).await?;
             }
         } else if arg == "get" {
             if let Some(file_name) = std::env::args().nth(2) {
@@ -143,9 +149,6 @@ async fn main() -> Result<()> {
             }
         }
     }
-
-    // Save the access key.
-    to_cbor("access.key", access_key).await?;
 
     // Save the forest.
     to_cbor("forest.cid", forest.store(store).await?).await?;
