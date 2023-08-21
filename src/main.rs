@@ -1,3 +1,4 @@
+mod document;
 mod file_store;
 
 use anyhow::Result;
@@ -13,7 +14,7 @@ use wnfs::{
     nameaccumulator::AccumulatorSetup,
     private::{
         forest::{hamt::HamtForest, traits::PrivateForest},
-        AccessKey, PrivateDirectory, PrivateNode,
+        AccessKey, PrivateDirectory, PrivateFile, PrivateNode,
     },
     rand_core::CryptoRngCore,
 };
@@ -67,23 +68,29 @@ async fn store_file<P: AsRef<Path>>(
 ) -> Result<()> {
     let full_path = path.as_ref();
 
-    let content = fs::read(full_path).await?;
     let file_name = full_path
         .file_name()
         .unwrap_or(OsStr::new("noname.txt"))
         .to_string_lossy();
 
-    dir.write(
-        &[file_name.to_string()],
-        true,
-        Utc::now(),
-        content,
+    let name = dir.header.get_name();
+
+    let now = Utc::now();
+
+    let file = PrivateFile::with_content_streaming(
+        &name,
+        now,
+        fs::File::open(full_path).await?,
         forest,
         store,
         rng,
     )
     .await?;
 
+    let source = dir
+        .open_file_mut(&[file_name.to_string()], false, now, forest, store, rng)
+        .await?;
+    source.copy_content_from(&file, now);
     Ok(())
 }
 
