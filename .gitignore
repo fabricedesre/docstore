@@ -1,4 +1,3 @@
 /target
-/blockstore
-access.key
-forest.cid
+/data
+Cargo.lock
