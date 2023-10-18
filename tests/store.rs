@@ -112,3 +112,30 @@ async fn store_variant() {
         assert_eq!(reverse_variant, variant_content.to_vec());
     }
 }
+
+#[async_std::test]
+async fn import_file() {
+    let path = ["hello.txt".to_owned()];
+
+    let num_test = 2;
+    {
+        // Step 1: store a file with a variant and read it back.
+        let mut store = init_test(num_test).await;
+
+        store
+            .import_file("./tests/fixtures/hello.txt")
+            .await
+            .unwrap();
+
+        let content = store.get_variant_vec("default", &path).await.unwrap();
+        assert_eq!(content.len(), 13);
+    }
+
+    {
+        // Step 2. Re-open the store and read as a Vec<>
+        let store: ResourceStore = get_test_store(num_test).await;
+
+        let content = store.get_variant_vec("default", &path).await.unwrap();
+        assert_eq!(content.len(), 13);
+    }
+}
