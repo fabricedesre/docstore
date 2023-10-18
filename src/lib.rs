@@ -1,4 +1,4 @@
 
 pub mod store;
-mod resource;
+pub mod resource;
 mod file_store;

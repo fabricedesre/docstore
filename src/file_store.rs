@@ -1,6 +1,5 @@
 //! A file backed store for wnfs
 
-use anyhow::Result;
 use async_std::fs;
 use async_std::path::{Path, PathBuf};
 use async_trait::async_trait;
@@ -8,12 +7,14 @@ use bytes::Bytes;
 use libipld::Cid;
 use wnfs::common::BlockStore;
 
+type IpldError = libipld::error::Error;
+
 pub struct FileStore {
     root: PathBuf,
 }
 
 impl FileStore {
-    pub async fn maybe_new<P: AsRef<Path>>(root: P) -> Result<Self> {
+    pub async fn maybe_new<P: AsRef<Path>>(root: P) -> Result<Self, std::io::Error> {
         // Check if the root directory exists, or try to create it.
         let root = root.as_ref();
         if !root.exists().await {
@@ -31,12 +32,12 @@ impl FileStore {
 
 #[async_trait(?Send)]
 impl BlockStore for FileStore {
-    async fn get_block(&self, cid: &Cid) -> Result<Bytes> {
+    async fn get_block(&self, cid: &Cid) -> Result<Bytes, IpldError> {
         let bytes = fs::read(self.path_for_cid(cid)).await?;
         Ok(bytes.into())
     }
 
-    async fn put_block(&self, bytes: impl Into<Bytes>, codec: u64) -> Result<Cid> {
+    async fn put_block(&self, bytes: impl Into<Bytes>, codec: u64) -> Result<Cid, IpldError> {
         let bytes: Bytes = bytes.into();
         let cid = self.create_cid(&bytes, codec)?;
         fs::write(self.path_for_cid(&cid), bytes).await?;

@@ -2,7 +2,6 @@
 
 use crate::resource::VariantMetadata;
 use crate::{file_store::FileStore, resource::ResourceMetadata};
-use anyhow::Result;
 use async_std::{fs, path::Path};
 use async_stream::stream;
 use chrono::Utc;
@@ -26,6 +25,27 @@ use wnfs::{
     },
     rand_core::CryptoRngCore,
 };
+
+#[derive(Error, Debug)]
+pub enum StoreError {
+    #[error("No such resource in store: {0:?}")]
+    NoSuchResource(Vec<String>),
+    #[error("No variant '{0}' for this resource: {1:?}")]
+    NoSuchVariant(String, Vec<String>),
+    #[error("No content found for the '{0}' variant for {1:?}")]
+    NoVariantContent(String, Vec<String>),
+    #[error("No metadata found for this resource: {0:?}")]
+    NoResourceMetadata(Vec<String>),
+    #[error("I/O error")]
+    IO(#[from] std::io::Error),
+    #[error("serde_cbor error")]
+    SerdeCBOR(#[from] serde_cbor::Error),
+    #[error("IPLD error")]
+    IPLD(#[from] libipld::error::Error),
+}
+
+type Result<T> = std::result::Result<T, StoreError>;
+type IpldResult<T> = std::result::Result<T, libipld::error::Error>;
 
 // Deserialize cbor from a file to an arbitrary type.
 async fn from_cbor<T, P: AsRef<Path>>(path: P) -> Result<T>
@@ -54,24 +74,6 @@ fn subpath<P: AsRef<Path>>(root: P, leaf: &str) -> PathBuf {
     let mut path: PathBuf = root.as_ref().into();
     path.push(leaf);
     path
-}
-
-#[derive(Error, Debug)]
-pub enum StoreError {
-    #[error("No such resource in store: {0:?}")]
-    NoSuchResource(Vec<String>),
-    #[error("No variant '{0}' for this resource: {1:?}")]
-    NoSuchVariant(String, Vec<String>),
-    #[error("No content found for the '{0}' variant for {1:?}")]
-    NoVariantContent(String, Vec<String>),
-    #[error("No metadata found for this resource: {0:?}")]
-    NoResourceMetadata(Vec<String>),
-}
-
-impl StoreError {
-    fn as_err<T>(self) -> Result<T> {
-        Err(self.into())
-    }
 }
 
 pub struct ResourceStore {
@@ -147,7 +149,7 @@ impl ResourceStore {
             .search_latest(&self.forest, &self.block_store)
             .await?;
 
-        root.as_dir()
+        Ok(root.as_dir()?)
     }
 
     /// Get a handle to a sub directory in the file system.
@@ -159,7 +161,7 @@ impl ResourceStore {
             .await?
         {
             Some(PrivateNode::Dir(dir)) => Ok(dir),
-            _ => StoreError::NoSuchResource(path.to_vec()).as_err(),
+            _ => Err(StoreError::NoSuchResource(path.to_vec())),
         }
     }
 
@@ -215,7 +217,7 @@ impl ResourceStore {
             .await?
         {
             Some(PrivateNode::File(file)) => Ok(file),
-            _ => StoreError::NoSuchResource(path.to_vec()).as_err(),
+            _ => Err(StoreError::NoSuchResource(path.to_vec())),
         }
     }
 
@@ -291,7 +293,7 @@ impl ResourceStore {
 
         let file_name = file.header.get_name().clone();
         let file_metadata = file.get_metadata_mut();
-        let maybe_resource_metadata: Option<Result<ResourceMetadata>> =
+        let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
             file_metadata.get_deserializable("res_meta");
         if let Some(Ok(mut resource_metadata)) = maybe_resource_metadata {
             resource_metadata.add_variant(variant_name, variant);
@@ -317,7 +319,7 @@ impl ResourceStore {
 
             self.save_state().await
         } else {
-            StoreError::NoResourceMetadata(path.to_vec()).as_err()
+            Err(StoreError::NoResourceMetadata(path.to_vec()))
         }
     }
 
@@ -328,27 +330,36 @@ impl ResourceStore {
 
         if variant_name == "default" {
             // For the default variant, get the "main" file content.
-            file.get_content(&self.forest, &self.block_store).await
+            file.get_content(&self.forest, &self.block_store)
+                .await
+                .map_err(|e| e.into())
         } else {
             // Fetch the variant content from the node metadata.
             let file_metadata = file.get_metadata();
-            let maybe_resource_metadata: Option<Result<ResourceMetadata>> =
+            let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
                 file_metadata.get_deserializable("res_meta");
             if let Some(Ok(resource_metadata)) = maybe_resource_metadata {
                 if !resource_metadata.has_variant(variant_name) {
-                    return StoreError::NoSuchVariant(variant_name.to_owned(), path.to_vec())
-                        .as_err();
+                    return Err(StoreError::NoSuchVariant(
+                        variant_name.to_owned(),
+                        path.to_vec(),
+                    ));
                 }
-                match file_metadata.get(&format!("variant_{}", variant_name)) {
+                match file_metadata.get(&format!("{}_variant", variant_name)) {
                     Some(variant_ipld) => {
                         let content = PrivateForestContent::from_metadata_value(variant_ipld)?;
-                        content.get_content(&self.forest, &self.block_store).await
+                        content
+                            .get_content(&self.forest, &self.block_store)
+                            .await
+                            .map_err(|e| e.into())
                     }
-                    None => StoreError::NoVariantContent(variant_name.to_owned(), path.to_vec())
-                        .as_err(),
+                    None => Err(StoreError::NoVariantContent(
+                        variant_name.to_owned(),
+                        path.to_vec(),
+                    )),
                 }
             } else {
-                StoreError::NoResourceMetadata(path.to_vec()).as_err()
+                Err(StoreError::NoResourceMetadata(path.to_vec()))
             }
         }
     }
@@ -365,33 +376,37 @@ impl ResourceStore {
             // For the default variant, get the "main" file content.
             Ok(Box::pin(stream! {
                 for await value in file.stream_content(0, &self.forest, &self.block_store) {
-                    yield value;
+                    yield value.map_err(|e| e.into());
                 }
             }))
         } else {
             // Fetch the variant content from the node metadata.
             let file_metadata = file.get_metadata();
-            let maybe_resource_metadata: Option<Result<ResourceMetadata>> =
+            let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
                 file_metadata.get_deserializable("res_meta");
             if let Some(Ok(resource_metadata)) = maybe_resource_metadata {
                 if !resource_metadata.has_variant(variant_name) {
-                    return StoreError::NoSuchVariant(variant_name.to_owned(), path.to_vec())
-                        .as_err();
+                    return Err(StoreError::NoSuchVariant(
+                        variant_name.to_owned(),
+                        path.to_vec(),
+                    ));
                 }
                 match file_metadata.get(&format!("variant_{}", variant_name)) {
                     Some(variant_ipld) => {
                         let content = PrivateForestContent::from_metadata_value(variant_ipld)?;
                         Ok(Box::pin(stream! {
                             for await value in content.stream(0, &self.forest, &self.block_store) {
-                                yield value;
+                                yield value.map_err(|e| e.into());
                             }
                         }))
                     }
-                    None => StoreError::NoVariantContent(variant_name.to_owned(), path.to_vec())
-                        .as_err(),
+                    None => Err(StoreError::NoVariantContent(
+                        variant_name.to_owned(),
+                        path.to_vec(),
+                    )),
                 }
             } else {
-                StoreError::NoResourceMetadata(path.to_vec()).as_err()
+                Err(StoreError::NoResourceMetadata(path.to_vec()))
             }
         }
     }
@@ -420,6 +435,8 @@ impl ResourceStore {
     }
 
     pub async fn ls(&self, dir: Rc<PrivateDirectory>) -> Result<Vec<(String, Metadata)>> {
-        dir.ls(&[], true, &self.forest, &self.block_store).await
+        dir.ls(&[], true, &self.forest, &self.block_store)
+            .await
+            .map_err(|e| e.into())
     }
 }

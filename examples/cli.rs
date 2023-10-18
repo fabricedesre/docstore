@@ -1,10 +1,9 @@
-use docstore::store::ResourceStore;
-use anyhow::Result;
 use core::future;
+use docstore::store::{ResourceStore, StoreError};
 use futures::TryStreamExt;
 
 #[async_std::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), StoreError> {
     let mut doc_store = ResourceStore::new("./data").await?;
 
     if let Some(arg) = std::env::args().nth(1) {

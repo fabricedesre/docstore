@@ -6,7 +6,6 @@ name = "docstore"
 version = "0.1.0"
 
 [dependencies]
-anyhow = "1.0"
 async-std = {version = "1.12", features = ["attributes"]}
 async-stream = "0.3"
 async-trait = "0.1"
