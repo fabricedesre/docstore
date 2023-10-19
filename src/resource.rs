@@ -84,4 +84,8 @@ impl ResourceMetadata {
     pub fn remove_variant(&mut self, name: &str) -> bool {
         self.variants.remove(name).is_some()
     }
+
+    pub fn tags(&self) -> &HashSet<String> {
+        &self.tags
+    }
 }

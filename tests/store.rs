@@ -139,3 +139,49 @@ async fn import_file() {
         assert_eq!(content.len(), 13);
     }
 }
+
+#[async_std::test]
+async fn get_metadata() {
+    let path = ["small file".to_owned()];
+    let content = b"abcdef0123456789".as_slice();
+    let variant_content = b"9876543210fedcba".as_slice();
+
+    let num_test = 3;
+    {
+        // Step 1: store a file with a variant and check the metadata
+        let mut store = init_test(num_test).await;
+
+        let variant = VariantMetadata::new(16, "text/plain");
+
+        let mut tags = HashSet::new();
+        tags.insert("tag_1".to_owned());
+        tags.insert("tag_2".to_owned());
+
+        store
+            .create_resource(&path, "small file", &variant, tags, content)
+            .await
+            .unwrap();
+
+        let variant = VariantMetadata::new(16, "text/plain");
+
+        store
+            .add_variant(&path, "reverse", &variant, variant_content)
+            .await
+            .unwrap();
+
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert!(meta.has_variant("default"));
+        assert!(meta.has_variant("reverse"));
+        assert_eq!(meta.tags().len(), 2);
+    }
+
+    {
+        // Step 2. Re-open the store and check the metadata
+        let store: ResourceStore = get_test_store(num_test).await;
+
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert!(meta.has_variant("default"));
+        assert!(meta.has_variant("reverse"));
+        assert_eq!(meta.tags().len(), 2);
+    }
+}

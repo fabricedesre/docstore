@@ -137,7 +137,7 @@ impl ResourceStore {
         };
 
         store.mkdir(&[".resources".to_owned()]).await?;
-        store.mkdir(&[".meta".to_owned()]).await?;
+        store.mkdir(&[".index".to_owned()]).await?;
 
         Ok(store)
     }
@@ -170,8 +170,8 @@ impl ResourceStore {
         self.subdir(&[".resources".to_owned()]).await
     }
 
-    async fn meta_dir(&self) -> Result<Rc<PrivateDirectory>> {
-        self.subdir(&[".resources".to_owned()]).await
+    async fn index_dir(&self) -> Result<Rc<PrivateDirectory>> {
+        self.subdir(&[".index".to_owned()]).await
     }
 
     /// Create a new directory, starting the path from the root.
@@ -438,5 +438,18 @@ impl ResourceStore {
         dir.ls(&[], true, &self.forest, &self.block_store)
             .await
             .map_err(|e| e.into())
+    }
+
+    pub async fn get_metadata(&self, path: &[String]) -> Result<ResourceMetadata> {
+        let file = self.maybe_file(path).await?;
+
+        let file_metadata = file.get_metadata();
+        let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
+            file_metadata.get_deserializable("res_meta");
+        if let Some(Ok(resource_metadata)) = maybe_resource_metadata {
+            Ok(resource_metadata)
+        } else {
+            Err(StoreError::NoResourceMetadata(path.to_vec()))
+        }
     }
 }
