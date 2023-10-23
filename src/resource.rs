@@ -37,6 +37,12 @@ impl FromSql for ResourceId {
     }
 }
 
+impl ToString for ResourceId {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub struct VariantMetadata {
     /// The variant size in bytes.
