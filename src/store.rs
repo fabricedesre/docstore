@@ -1,6 +1,7 @@
 //! Private resources store api
 
-use crate::resource::VariantMetadata;
+use crate::indexer::{Indexer, SqliteDbError};
+use crate::resource::{ResourceId, VariantMetadata};
 use crate::{file_store::FileStore, resource::ResourceMetadata};
 use async_std::{fs, path::Path};
 use async_stream::stream;
@@ -42,6 +43,8 @@ pub enum StoreError {
     SerdeCBOR(#[from] serde_cbor::Error),
     #[error("IPLD error")]
     IPLD(#[from] libipld::error::Error),
+    #[error("SQlite error")]
+    Sqlite(#[from] SqliteDbError),
 }
 
 type Result<T> = std::result::Result<T, StoreError>;
@@ -82,6 +85,7 @@ pub struct ResourceStore {
     access_key: AccessKey,
     rng: ThreadRng,
     root_dir: PathBuf,
+    indexer: Indexer,
 }
 
 impl ResourceStore {
@@ -128,12 +132,15 @@ impl ResourceStore {
 
         let forest = HamtForest::load(&forest_cid, &block_store).await?;
 
+        let indexer = Indexer::new(root_dir.as_ref().to_path_buf())?;
+
         let mut store = Self {
             forest,
             block_store,
             access_key,
             rng,
             root_dir: root_dir.as_ref().into(),
+            indexer,
         };
 
         store.mkdir(&[".resources".to_owned()]).await?;
@@ -234,7 +241,7 @@ impl ResourceStore {
         let now = Utc::now();
 
         // Create the resource metadata.
-        let resource_metadata = ResourceMetadata::new(desc, default_variant, tags);
+        let resource_metadata = ResourceMetadata::new(desc, default_variant, tags.clone());
 
         let dir_name = dir.header.get_name().clone();
         let file = dir
@@ -267,6 +274,13 @@ impl ResourceStore {
         dir.as_node()
             .store(&mut self.forest, &self.block_store, &mut self.rng)
             .await?;
+
+        let id = path.into();
+        self.indexer.add_resource(&id)?;
+        for tag in tags {
+            self.indexer.add_tag(&id, &tag)?;
+        }
+        self.indexer.add_text(&id, "default", desc)?;
 
         self.save_state().await
     }
@@ -451,5 +465,16 @@ impl ResourceStore {
         } else {
             Err(StoreError::NoResourceMetadata(path.to_vec()))
         }
+    }
+
+    pub async fn search(&self, text: &str) -> Result<Vec<(ResourceId, ResourceMetadata)>> {
+        let ids = self.indexer.search(text)?;
+
+        let mut result = vec![];
+        for id in ids {
+            let path: Vec<String> = id.clone().into();
+            result.push((id, self.get_metadata(&path).await?))
+        }
+        Ok(result)
     }
 }

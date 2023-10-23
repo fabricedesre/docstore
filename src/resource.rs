@@ -1,7 +1,47 @@
 //! Resource representation
 
+use rusqlite::types::{FromSql, FromSqlError, ToSqlOutput, ValueRef};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+/// Type used to represent a unique id for a resource.
+/// Currently using the resource path.
+#[derive(Clone, Debug)]
+pub struct ResourceId(String);
+
+impl From<&[String]> for ResourceId {
+    fn from(value: &[String]) -> Self {
+        Self(value.join("/"))
+    }
+}
+
+impl Into<Vec<String>> for ResourceId {
+    fn into(self) -> Vec<String> {
+        self.0.split('/').map(|s| s.to_owned()).collect()
+    }
+}
+
+impl Into<String> for ResourceId {
+    fn into(self) -> String {
+        self.0
+    }
+}
+
+impl rusqlite::ToSql for ResourceId {
+    fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
+        Ok(self.0.clone().into())
+    }
+}
+
+impl FromSql for ResourceId {
+    fn column_result(value: ValueRef<'_>) -> Result<Self, FromSqlError> {
+        if let ValueRef::Text(text) = value {
+            Ok(Self(String::from_utf8_lossy(text).into()))
+        } else {
+            Err(FromSqlError::InvalidType)
+        }
+    }
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct VariantMetadata {

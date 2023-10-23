@@ -185,3 +185,61 @@ async fn get_metadata() {
         assert_eq!(meta.tags().len(), 2);
     }
 }
+
+#[async_std::test]
+async fn search() {
+    let path = ["small file".to_owned()];
+    let content = b"abcdef0123456789".as_slice();
+    let variant_content = b"9876543210fedcba".as_slice();
+
+    let num_test = 4;
+    {
+        // Step 1: store a file with a variant and search it.
+        let mut store = init_test(num_test).await;
+
+        let variant = VariantMetadata::new(16, "text/plain");
+
+        let mut tags = HashSet::new();
+        tags.insert("tag_1".to_owned());
+        tags.insert("tag_2".to_owned());
+
+        store
+            .create_resource(&path, "small file", &variant, tags, content)
+            .await
+            .unwrap();
+
+        let variant = VariantMetadata::new(16, "text/plain");
+
+        store
+            .add_variant(&path, "reverse", &variant, variant_content)
+            .await
+            .unwrap();
+
+        let results = store.search("small").await.unwrap();
+        assert_eq!(results.len(), 1);
+        let result = &results[0];
+        let meta = &result.1;
+        assert!(meta.has_variant("default"));
+        assert!(meta.has_variant("reverse"));
+        assert_eq!(meta.tags().len(), 2);
+
+        let results = store.search("big").await.unwrap();
+        assert_eq!(results.len(), 0);
+    }
+
+    {
+        // Step 2. Re-open the store and check the search results.
+        let store: ResourceStore = get_test_store(num_test).await;
+
+        let results = store.search("small").await.unwrap();
+        assert_eq!(results.len(), 1);
+        let result = &results[0];
+        let meta = &result.1;
+        assert!(meta.has_variant("default"));
+        assert!(meta.has_variant("reverse"));
+        assert_eq!(meta.tags().len(), 2);
+
+        let results = store.search("big").await.unwrap();
+        assert_eq!(results.len(), 0);
+    }
+}
