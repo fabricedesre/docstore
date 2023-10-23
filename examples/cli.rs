@@ -17,7 +17,12 @@ async fn main() -> Result<(), StoreError> {
             let files = doc_store.ls(doc_store.resources_dir().await?).await?;
             println!("{} files:", files.len());
             for file in files {
-                println!("{}", file.0);
+                let mut size = 0;
+                let variants = file.1.variants();
+                for (_variant_name, variant_meta) in variants {
+                    size += variant_meta.size();
+                }
+                println!("{} - {}b [{} variants]", file.0, size, variants.len());
             }
         } else if arg == "get" {
             if let Some(file_name) = std::env::args().nth(2) {

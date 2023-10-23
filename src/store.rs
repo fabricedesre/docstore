@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use thiserror::Error;
 use wnfs::{
-    common::{BlockStore, Metadata},
+    common::BlockStore,
     nameaccumulator::AccumulatorSetup,
     private::{
         forest::{hamt::HamtForest, traits::PrivateForest},
@@ -132,7 +132,7 @@ impl ResourceStore {
 
         let forest = HamtForest::load(&forest_cid, &block_store).await?;
 
-        let indexer = Indexer::new(root_dir.as_ref().to_path_buf())?;
+        let indexer = Indexer::new(root_dir.as_ref().to_path_buf(), "index.sqlite")?;
 
         let mut store = Self {
             forest,
@@ -208,6 +208,43 @@ impl ResourceStore {
     }
 
     async fn save_state(&mut self) -> Result<()> {
+        if self.indexer.should_update() {
+            // Update <root_dir>/index.sqlite to .index/index.sqlite
+            let mut dir = self.index_dir().await?;
+            let dir_name = dir.header.get_name().clone();
+            let now = Utc::now();
+            let file = dir
+                .open_file_mut(
+                    &["index.sqlite".to_owned()],
+                    true,
+                    now,
+                    &mut self.forest,
+                    &self.block_store,
+                    &mut self.rng,
+                )
+                .await?;
+            let mut full_path = self.root_dir.clone();
+            full_path.push("index.sqlite");
+            let reader = fs::File::open(full_path).await?;
+            let source = PrivateFile::with_content_streaming(
+                &dir_name,
+                now,
+                reader,
+                &mut self.forest,
+                &self.block_store,
+                &mut self.rng,
+            )
+            .await?;
+
+            file.copy_content_from(&source, now);
+
+            dir.as_node()
+                .store(&mut self.forest, &self.block_store, &mut self.rng)
+                .await?;
+
+            self.indexer.set_updated();
+        }
+
         to_cbor(
             subpath(&self.root_dir, "forest.cid"),
             self.forest.store(&self.block_store).await?,
@@ -448,10 +485,20 @@ impl ResourceStore {
         .await
     }
 
-    pub async fn ls(&self, dir: Rc<PrivateDirectory>) -> Result<Vec<(String, Metadata)>> {
-        dir.ls(&[], true, &self.forest, &self.block_store)
-            .await
-            .map_err(|e| e.into())
+    pub async fn ls(&self, dir: Rc<PrivateDirectory>) -> Result<Vec<(String, ResourceMetadata)>> {
+        let children = dir.ls(&[], true, &self.forest, &self.block_store).await?;
+
+        let mut results = vec![];
+        for (path, metadata) in children {
+            let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
+                metadata.get_deserializable("res_meta");
+            if let Some(Ok(resource_metadata)) = maybe_resource_metadata {
+                results.push((path, resource_metadata));
+            } else {
+                return Err(StoreError::NoResourceMetadata(vec![path]));
+            }
+        }
+        Ok(results)
     }
 
     pub async fn get_metadata(&self, path: &[String]) -> Result<ResourceMetadata> {

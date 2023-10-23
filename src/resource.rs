@@ -21,12 +21,6 @@ impl Into<Vec<String>> for ResourceId {
     }
 }
 
-impl Into<String> for ResourceId {
-    fn into(self) -> String {
-        self.0
-    }
-}
-
 impl rusqlite::ToSql for ResourceId {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>, rusqlite::Error> {
         Ok(self.0.clone().into())
@@ -127,5 +121,9 @@ impl ResourceMetadata {
 
     pub fn tags(&self) -> &HashSet<String> {
         &self.tags
+    }
+
+    pub fn variants<'a>(&'a self) -> &'a HashMap<String, VariantMetadata> {
+        &self.variants
     }
 }

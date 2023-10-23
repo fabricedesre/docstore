@@ -4,11 +4,11 @@
 //! - Full Text Index of resource description and mime type specific extraction.
 //! - Tag indexing
 
+use crate::resource::ResourceId;
 use log::{error, info};
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use std::path::Path;
 use thiserror::Error;
-use crate::resource::ResourceId;
 
 #[derive(Error, Debug)]
 pub enum SqliteDbError {
@@ -38,12 +38,13 @@ static LATEST_VERSION: u32 = 1;
 
 pub struct Indexer {
     conn: Connection,
+    should_update: bool,
 }
 
 impl Indexer {
-    pub fn new<P: AsRef<Path>>(root_dir: P) -> Result<Self, SqliteDbError> {
+    pub fn new<P: AsRef<Path>>(root_dir: P, name: &str) -> Result<Self, SqliteDbError> {
         let mut path = root_dir.as_ref().to_path_buf();
-        path.push("index.sqlite");
+        path.push(name);
         let mut conn = Connection::open_with_flags(&path, OpenFlags::default())?;
 
         let mut version: u32 =
@@ -78,37 +79,51 @@ impl Indexer {
 
         conn.pragma_update(None, "journal_mode", "WAL".to_string())?;
 
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            should_update: false,
+        })
     }
 
     pub fn add_resource(&mut self, id: &ResourceId) -> Result<(), SqliteDbError> {
         let now = chrono::Utc::now();
-        self.conn
+        let res = self
+            .conn
             .execute(
                 "INSERT INTO resources (id, frecency, modified) VALUES (?1, ?2, ?3)",
                 (id, 0, now),
             )
-            .map(|_| ())
-            .map_err(|e| e.into())
+            .map(|_| ())?;
+        self.should_update = true;
+        Ok(res)
     }
 
     pub fn add_tag(&mut self, id: &ResourceId, tag: &str) -> Result<(), SqliteDbError> {
-        self.conn
+        let res = self
+            .conn
             .execute("INSERT INTO tags (id, tag) VALUES (?1, ?2)", (id, tag))
-            .map(|_| ())
-            .map_err(|e| e.into())
+            .map(|_| ())?;
+        self.should_update = true;
+        Ok(res)
     }
 
-    pub fn add_text(&mut self, id: &ResourceId, variant: &str, text: &str) -> Result<(), SqliteDbError> {
+    pub fn add_text(
+        &mut self,
+        id: &ResourceId,
+        variant: &str,
+        text: &str,
+    ) -> Result<(), SqliteDbError> {
         // Remove diacritics since the trigram tokenizer of SQlite doesn't have this option.
         let content = secular::lower_lay_string(text);
-        self.conn
+        let _res = self
+            .conn
             .execute(
                 "INSERT INTO fts (id, variant, content) VALUES (?1, ?2, ?3)",
                 (id, variant, &content),
             )
-            .map(|_| ())
-            .map_err(|e| e.into())
+            .map(|_| ())?;
+        self.should_update = true;
+        Ok(())
     }
 
     pub fn search(&self, text: &str) -> Result<Vec<ResourceId>, SqliteDbError> {
@@ -124,5 +139,14 @@ impl Indexer {
         }
 
         Ok(result)
+    }
+
+    pub fn set_updated(&mut self) {
+        self.should_update = false;
+    }
+
+    #[inline(always)]
+    pub fn should_update(&self) -> bool {
+        self.should_update
     }
 }
