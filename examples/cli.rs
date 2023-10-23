@@ -5,6 +5,7 @@ use std::time::Instant;
 
 #[async_std::main]
 async fn main() -> Result<(), StoreError> {
+    env_logger::init();
     let mut doc_store = ResourceStore::new("./data").await?;
 
     if let Some(arg) = std::env::args().nth(1) {

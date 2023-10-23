@@ -5,6 +5,7 @@
 //! - Tag indexing
 
 use crate::resource::ResourceId;
+use crate::timer::Timer;
 use log::{error, info};
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use std::path::Path;
@@ -86,6 +87,7 @@ impl Indexer {
     }
 
     pub fn add_resource(&mut self, id: &ResourceId) -> Result<(), SqliteDbError> {
+        let _timer = Timer::start(&format!("Indexer add resource {}", id.to_string()));
         let now = chrono::Utc::now();
         self.conn
             .execute(
@@ -98,6 +100,7 @@ impl Indexer {
     }
 
     pub fn add_tag(&mut self, id: &ResourceId, tag: &str) -> Result<(), SqliteDbError> {
+        let _timer = Timer::start(&format!("Indexer add tag {} to {}", tag, id.to_string()));
         self.conn
             .execute("INSERT INTO tags (id, tag) VALUES (?1, ?2)", (id, tag))
             .map(|_| ())?;
@@ -111,6 +114,8 @@ impl Indexer {
         variant: &str,
         text: &str,
     ) -> Result<(), SqliteDbError> {
+        let _timer = Timer::start(&format!("Indexer add text {} to", id.to_string()));
+
         // Remove diacritics since the trigram tokenizer of SQlite doesn't have this option.
         let content = secular::lower_lay_string(text);
         self.conn
@@ -124,6 +129,8 @@ impl Indexer {
     }
 
     pub fn search(&self, text: &str) -> Result<Vec<ResourceId>, SqliteDbError> {
+        let _timer = Timer::start(&format!("Indexer search {}", text));
+
         let search = format!("%{}%", secular::lower_lay_string(text));
 
         let mut stmt = self
