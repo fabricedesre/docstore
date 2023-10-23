@@ -87,24 +87,22 @@ impl Indexer {
 
     pub fn add_resource(&mut self, id: &ResourceId) -> Result<(), SqliteDbError> {
         let now = chrono::Utc::now();
-        let res = self
-            .conn
+        self.conn
             .execute(
                 "INSERT INTO resources (id, frecency, modified) VALUES (?1, ?2, ?3)",
                 (id, 0, now),
             )
             .map(|_| ())?;
         self.should_update = true;
-        Ok(res)
+        Ok(())
     }
 
     pub fn add_tag(&mut self, id: &ResourceId, tag: &str) -> Result<(), SqliteDbError> {
-        let res = self
-            .conn
+        self.conn
             .execute("INSERT INTO tags (id, tag) VALUES (?1, ?2)", (id, tag))
             .map(|_| ())?;
         self.should_update = true;
-        Ok(res)
+        Ok(())
     }
 
     pub fn add_text(
@@ -115,8 +113,7 @@ impl Indexer {
     ) -> Result<(), SqliteDbError> {
         // Remove diacritics since the trigram tokenizer of SQlite doesn't have this option.
         let content = secular::lower_lay_string(text);
-        let _res = self
-            .conn
+        self.conn
             .execute(
                 "INSERT INTO fts (id, variant, content) VALUES (?1, ?2, ?3)",
                 (id, variant, &content),

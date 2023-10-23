@@ -21,7 +21,7 @@ async fn main() -> Result<(), StoreError> {
             for file in files {
                 let mut size = 0;
                 let variants = file.1.variants();
-                for (_variant_name, variant_meta) in variants {
+                for variant_meta in variants.values() {
                     size += variant_meta.size();
                 }
                 println!("{} - {}b [{} variants]", file.0, size, variants.len());
@@ -36,7 +36,7 @@ async fn main() -> Result<(), StoreError> {
                     })
                     .await?;
 
-                println!("");
+                println!();
             }
         } else if arg == "search" {
             if let Some(text) = std::env::args().nth(2) {
@@ -46,7 +46,7 @@ async fn main() -> Result<(), StoreError> {
                 for file in files {
                     let mut size = 0;
                     let variants = file.1.variants();
-                    for (_variant_name, variant_meta) in variants {
+                    for variant_meta in variants.values() {
                         size += variant_meta.size();
                     }
                     println!(

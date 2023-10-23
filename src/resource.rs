@@ -15,9 +15,9 @@ impl From<&[String]> for ResourceId {
     }
 }
 
-impl Into<Vec<String>> for ResourceId {
-    fn into(self) -> Vec<String> {
-        self.0.split('/').map(|s| s.to_owned()).collect()
+impl From<ResourceId> for Vec<String> {
+    fn from(val: ResourceId) -> Self {
+        val.0.split('/').map(|s| s.to_owned()).collect()
     }
 }
 
@@ -129,7 +129,7 @@ impl ResourceMetadata {
         &self.tags
     }
 
-    pub fn variants<'a>(&'a self) -> &'a HashMap<String, VariantMetadata> {
+    pub fn variants(&self) -> &HashMap<String, VariantMetadata> {
         &self.variants
     }
 }
