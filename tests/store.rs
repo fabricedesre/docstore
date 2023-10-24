@@ -4,7 +4,8 @@ use docstore::resource::VariantMetadata;
 use docstore::store::ResourceStore;
 use futures::TryStreamExt;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 async fn get_test_store(num: u32) -> ResourceStore {
     ResourceStore::new(&format!("./tests/data{}", num))
@@ -21,6 +22,13 @@ async fn init_test(num: u32) -> ResourceStore {
     }
 
     get_test_store(num).await
+}
+
+fn fixture_file<P: AsRef<Path>>(path: P) -> Cursor<Vec<u8>> {
+    let mut file = std::fs::File::open(path).unwrap();
+    let mut buffer = vec![];
+    file.read_to_end(&mut buffer).unwrap();
+    Cursor::new(buffer)
 }
 
 #[async_std::test]
@@ -247,6 +255,47 @@ async fn search() {
         assert_eq!(meta.tags().len(), 2);
 
         let results = store.search("big").await.unwrap();
+        assert_eq!(results.len(), 0);
+    }
+}
+
+#[async_std::test]
+async fn index_place() {
+    let path = ["place test".to_owned()];
+
+    let num_test = 5;
+    {
+        // Step 1: store a file with a variant and search it.
+        let mut store = init_test(num_test).await;
+
+        let content = fixture_file("./tests/fixtures/places-1.json");
+        let variant = VariantMetadata::new(16, "application/x-places+json");
+
+        store
+            .create_resource(
+                &path,
+                "sample place document",
+                &variant,
+                HashSet::new(),
+                content,
+            )
+            .await
+            .unwrap();
+
+        let results = store.search("example").await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        let results = store.search("unknown").await.unwrap();
+        assert_eq!(results.len(), 0);
+    }
+
+    {
+        // Step 2. Re-open the store and check the search results.
+        let store: ResourceStore = get_test_store(num_test).await;
+        let results = store.search("example").await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        let results = store.search("unknown").await.unwrap();
         assert_eq!(results.len(), 0);
     }
 }

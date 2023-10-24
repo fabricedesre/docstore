@@ -1,6 +1,6 @@
+use log::debug;
 /// A scope based timer.
 use std::time::Instant;
-use log::debug;
 
 pub(crate) struct Timer {
     start: Instant,

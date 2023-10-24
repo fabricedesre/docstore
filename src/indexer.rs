@@ -4,7 +4,7 @@
 //! - Full Text Index of resource description and mime type specific extraction.
 //! - Tag indexing
 
-use crate::fts::text_plain_indexer;
+use crate::fts::{json_indexer, text_plain_indexer};
 use crate::resource::{ResourceId, VariantMetadata};
 use crate::timer::Timer;
 use futures::io::AsyncSeekExt;
@@ -151,9 +151,14 @@ impl Indexer {
             variant_name
         ));
 
-        let text = match variant.mime_type().as_str() {
-            "text/plain" => Some(text_plain_indexer(content).await?),
-            _ => None,
+        let mime = variant.mime_type().to_owned();
+        let text = if mime.ends_with("json") {
+            Some(json_indexer(content, &mime).await?)
+        } else {
+            match mime.as_str() {
+                "text/plain" => Some(text_plain_indexer(content).await?),
+                _ => None,
+            }
         };
 
         if let Some(text) = text {
