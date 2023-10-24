@@ -382,3 +382,80 @@ async fn delete_resource() {
         assert!(store.get_variant_vec("default", &path).await.is_err());
     }
 }
+
+#[async_std::test]
+async fn delete_variant() {
+    let path = ["small file".to_owned()];
+    let content = b"abcdef0123456789".as_slice();
+    let variant_content = b"9876543210fedcba".as_slice();
+
+    let num_test = 8;
+    {
+        // Create a resource with 2 variants.
+        let mut store = init_test(num_test).await;
+
+        let variant = VariantMetadata::new(16, "text/plain");
+
+        store
+            .create_resource(
+                &path,
+                "small file",
+                &variant,
+                HashSet::new(),
+                Cursor::new(content),
+            )
+            .await
+            .unwrap();
+
+        let variant = VariantMetadata::new(16, "text/plain");
+
+        store
+            .add_variant(&path, "reverse", &variant, Cursor::new(variant_content))
+            .await
+            .unwrap();
+
+        let default_variant = store.get_variant_vec("default", &path).await.unwrap();
+        assert_eq!(default_variant, content.to_vec());
+
+        let reverse_variant = store.get_variant_vec("reverse", &path).await.unwrap();
+        assert_eq!(reverse_variant, variant_content.to_vec());
+
+        // Check that the medata has 2 variants.
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.variants().len(), 2);
+
+        // Search for the "reverse" variant content.
+        let result = store.search("fedcba").await.unwrap();
+        assert_eq!(result.len(), 1);
+
+        // Delete the "reverse" variant.
+        store.delete_variant(&path, "reverse").await.unwrap();
+
+        // Check that the medata has 1 variant.
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.variants().len(), 1);
+
+        // Search for the "reverse" variant content.
+        let result = store.search("fedcba").await.unwrap();
+        assert_eq!(result.len(), 0);
+
+        // Fail to get the remove variant content.
+        assert!(store.get_variant_vec("reverse", &path).await.is_err());
+    }
+
+    {
+        // Re-open the store and check the state.
+        let store: ResourceStore = get_test_store(num_test).await;
+
+        // Check that the medata has 1 variant.
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.variants().len(), 1);
+
+        // Search for the "reverse" variant content.
+        let result = store.search("fedcba").await.unwrap();
+        assert_eq!(result.len(), 0);
+
+        // Fail to get the remove variant content.
+        assert!(store.get_variant_vec("reverse", &path).await.is_err());
+    }
+}

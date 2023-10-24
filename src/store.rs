@@ -382,6 +382,56 @@ impl ResourceStore {
         }
     }
 
+    /// Deletes a single variant from an existing resource.
+    pub async fn delete_variant(&mut self, path: &[String], variant_name: &str) -> Result<()> {
+        // Deleting the default variant is the same as deleting the whole resource.
+        if variant_name == "default" {
+            return self.delete_resource(path).await;
+        }
+
+        let mut dir = self.resources_dir().await?;
+
+        let file = dir
+            .open_file_mut(
+                path,
+                true,
+                Utc::now(),
+                &mut self.forest,
+                &self.block_store,
+                &mut self.rng,
+            )
+            .await?;
+
+        let file_metadata = file.get_metadata_mut();
+
+        // Get the private forest content for that resource.
+        let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
+            file_metadata.get_deserializable("res_meta");
+        if let Some(Ok(mut resource_metadata)) = maybe_resource_metadata {
+            if !resource_metadata.has_variant(variant_name) {
+                return Err(StoreError::NoSuchVariant(
+                    variant_name.to_owned(),
+                    path.to_vec(),
+                ));
+            }
+
+            resource_metadata.remove_variant(variant_name);
+            file_metadata.put_serializable("res_meta", resource_metadata)?;
+
+            let _ = file_metadata.delete(&format!("{}_variant", variant_name));
+        } else {
+            return Err(StoreError::NoResourceMetadata(path.to_vec()));
+        }
+
+        dir.as_node()
+            .store(&mut self.forest, &self.block_store, &mut self.rng)
+            .await?;
+
+        self.indexer.delete_variant(&path.into(), variant_name)?;
+
+        self.save_state().await
+    }
+
     /// Removes a resource and all its variants from the store.
     pub async fn delete_resource(&mut self, path: &[String]) -> Result<()> {
         let mut dir = self.resources_dir().await?;

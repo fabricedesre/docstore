@@ -117,6 +117,22 @@ impl Indexer {
         Ok(())
     }
 
+    pub fn delete_variant(&mut self, id: &ResourceId, variant: &str) -> Result<(), SqliteDbError> {
+        let _timer = Timer::start(&format!(
+            "Indexer delete variant {} from {}",
+            variant,
+            id.to_string()
+        ));
+        self.conn
+            .execute(
+                "DELETE FROM fts  WHERE id = ?1 AND variant = ?2",
+                (id, variant),
+            )
+            .map(|_| ())?;
+        self.should_update = true;
+        Ok(())
+    }
+
     pub fn add_tag(&mut self, id: &ResourceId, tag: &str) -> Result<(), SqliteDbError> {
         let _timer = Timer::start(&format!("Indexer add tag {} to {}", tag, id.to_string()));
         self.conn
