@@ -299,3 +299,44 @@ async fn index_place() {
         assert_eq!(results.len(), 0);
     }
 }
+
+#[async_std::test]
+async fn index_contact() {
+    let path = ["contact test".to_owned()];
+
+    let num_test = 6;
+    {
+        let mut store = init_test(num_test).await;
+
+        let content = fixture_file("./tests/fixtures/contacts-1.json");
+        let variant = VariantMetadata::new(16, "application/x-contact+json");
+
+        store
+            .create_resource(&path, "sample contact", &variant, HashSet::new(), content)
+            .await
+            .unwrap();
+
+        // Search name
+        let results = store.search("dupont").await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        // Search first name letter
+        let results = store.search("^^^^j").await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        // Search first name letter
+        let results = store.search("^^^^t").await.unwrap();
+        assert_eq!(results.len(), 0);
+
+        // Search phone number
+        let results = store.search("012345").await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        // Search email
+        let results = store.search("secret@").await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        let results = store.search("unknown").await.unwrap();
+        assert_eq!(results.len(), 0);
+    }
+}

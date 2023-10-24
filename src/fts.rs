@@ -98,12 +98,38 @@ pub fn new_places_indexer() -> FlatJsonIndexer {
     FlatJsonIndexer::new(&["url", "title"], None)
 }
 
+/// Indexer for the content of a "Contacts" object.
+/// This is a json value with the following format:
+/// { name: "...", phone: "[...]", email: "[...]" }
+/// If indexeing the "name" field, a value is added with
+/// the prefix "^^^^" to allow "starts with" matches.
+fn custom_contact_index(field: &str, text: &str) -> Vec<String> {
+    if text.is_empty() {
+        vec![]
+    } else if field == "name" {
+        vec![
+            text.to_owned(),
+            format!("^^^^{}", text.chars().next().unwrap()),
+        ]
+    } else {
+        vec![text.to_owned()]
+    }
+}
+
+pub fn new_contacts_indexer() -> FlatJsonIndexer {
+    FlatJsonIndexer::new(
+        &["name", "phone", "email"],
+        Some(Box::new(custom_contact_index)),
+    )
+}
+
 pub async fn json_indexer<C: AsyncRead + Unpin>(
     content: &mut C,
     mime: &str,
 ) -> Result<String, IndexerError> {
     let json_indexer = match mime {
         "application/x-places+json" => new_places_indexer(),
+        "application/x-contact+json" => new_contacts_indexer(),
         _ => return Err(IndexerError::UnsupportedMime(mime.to_owned())),
     };
     json_indexer.get_text(content).await
