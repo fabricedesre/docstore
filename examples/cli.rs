@@ -1,7 +1,25 @@
 use core::future;
-use docstore::store::{ResourceStore, StoreError};
+use docstore::{
+    resource::ResourceMetadata,
+    store::{ResourceStore, StoreError},
+};
 use futures::TryStreamExt;
 use std::time::Instant;
+
+fn print_resource_details(id: &str, meta: &ResourceMetadata) {
+    let mut size = 0;
+    let variants = meta.variants();
+    for variant_meta in variants.values() {
+        size += variant_meta.size();
+    }
+
+    let mut out = format!("{} - {}b ", id, size);
+    for (name, variant_meta) in variants {
+        out.push_str(&format!("[{} : {}]", name, variant_meta.mime_type()));
+    }
+
+    println!("{}", out);
+}
 
 #[async_std::main]
 async fn main() -> Result<(), StoreError> {
@@ -20,12 +38,7 @@ async fn main() -> Result<(), StoreError> {
             let files = doc_store.ls(doc_store.resources_dir().await?).await?;
             println!("{} files:", files.len());
             for file in files {
-                let mut size = 0;
-                let variants = file.1.variants();
-                for variant_meta in variants.values() {
-                    size += variant_meta.size();
-                }
-                println!("{} - {}b [{} variants]", file.0, size, variants.len());
+                print_resource_details(&file.0, &file.1);
             }
         } else if arg == "get" {
             if let Some(file_name) = std::env::args().nth(2) {
@@ -45,17 +58,7 @@ async fn main() -> Result<(), StoreError> {
 
                 println!("{} search results:", files.len(),);
                 for file in files {
-                    let mut size = 0;
-                    let variants = file.1.variants();
-                    for variant_meta in variants.values() {
-                        size += variant_meta.size();
-                    }
-                    println!(
-                        "{} - {}b [{} variants]",
-                        file.0.to_string(),
-                        size,
-                        variants.len()
-                    );
+                    print_resource_details(&file.0.to_string(), &file.1);
                 }
             }
         }
