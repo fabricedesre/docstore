@@ -105,6 +105,18 @@ impl Indexer {
         Ok(())
     }
 
+    pub fn delete_resource(&mut self, id: &ResourceId) -> Result<(), SqliteDbError> {
+        let _timer = Timer::start(&format!("Indexer delete resource {}", id.to_string()));
+        self.conn
+            .execute("DELETE FROM resources  WHERE id = ?", [id])
+            .map(|_| ())?;
+        self.conn
+            .execute("DELETE FROM fts  WHERE id = ?", [id])
+            .map(|_| ())?;
+        self.should_update = true;
+        Ok(())
+    }
+
     pub fn add_tag(&mut self, id: &ResourceId, tag: &str) -> Result<(), SqliteDbError> {
         let _timer = Timer::start(&format!("Indexer add tag {} to {}", tag, id.to_string()));
         self.conn
@@ -138,7 +150,7 @@ impl Indexer {
         Ok(())
     }
 
-    pub async fn add_content<C: AsyncRead + AsyncSeekExt + Unpin>(
+    pub async fn add_variant<C: AsyncRead + AsyncSeekExt + Unpin>(
         &mut self,
         id: &ResourceId,
         variant_name: &str,

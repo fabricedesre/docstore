@@ -288,7 +288,7 @@ impl ResourceStore {
         }
         self.indexer.add_text(&id, "default", desc)?;
         self.indexer
-            .add_content(&id, "default", default_variant, &mut content)
+            .add_variant(&id, "default", default_variant, &mut content)
             .await?;
 
         let dir_name = dir.header.get_name().clone();
@@ -355,7 +355,7 @@ impl ResourceStore {
             file_metadata.put_serializable("res_meta", resource_metadata)?;
 
             self.indexer
-                .add_content(&path.into(), variant_name, variant, &mut content)
+                .add_variant(&path.into(), variant_name, variant, &mut content)
                 .await?;
 
             let variant_content = PrivateForestContent::new_streaming(
@@ -380,6 +380,20 @@ impl ResourceStore {
         } else {
             Err(StoreError::NoResourceMetadata(path.to_vec()))
         }
+    }
+
+    /// Removes a resource and all its variants from the store.
+    pub async fn delete_resource(&mut self, path: &[String]) -> Result<()> {
+        let mut dir = self.resources_dir().await?;
+
+        dir.rm(path, true, &self.forest, &self.block_store).await?;
+        dir.as_node()
+            .store(&mut self.forest, &self.block_store, &mut self.rng)
+            .await?;
+
+        self.indexer.delete_resource(&path.into())?;
+
+        self.save_state().await
     }
 
     /// Retrieves the content for this path and variant as a bytes vector.

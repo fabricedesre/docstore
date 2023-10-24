@@ -340,3 +340,45 @@ async fn index_contact() {
         assert_eq!(results.len(), 0);
     }
 }
+
+#[async_std::test]
+async fn delete_resource() {
+    let path = ["contact test".to_owned()];
+
+    let num_test = 7;
+    {
+        let mut store = init_test(num_test).await;
+
+        let content = fixture_file("./tests/fixtures/contacts-1.json");
+        let variant = VariantMetadata::new(16, "application/x-contact+json");
+
+        store
+            .create_resource(&path, "sample contact", &variant, HashSet::new(), content)
+            .await
+            .unwrap();
+
+        // Search name
+        let results = store.search("dupont").await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        // Get content.
+        let content = store.get_variant_vec("default", &path).await.unwrap();
+        assert_eq!(content.len(), 127);
+
+        store.delete_resource(&path).await.unwrap();
+
+        // Search name
+        let results = store.search("dupont").await.unwrap();
+        assert_eq!(results.len(), 0);
+
+        // Fail to list resource.
+        let files = store
+            .ls(store.resources_dir().await.unwrap())
+            .await
+            .unwrap();
+        assert_eq!(files.len(), 0);
+
+        // Fail to get content.
+        assert!(store.get_variant_vec("default", &path).await.is_err());
+    }
+}
