@@ -1,3 +1,4 @@
+use async_std::io::Cursor;
 use core::future;
 use docstore::resource::VariantMetadata;
 use docstore::store::ResourceStore;
@@ -38,7 +39,7 @@ async fn store_empty_file() {
                 "empty file",
                 &variant,
                 HashSet::new(),
-                vec![].as_slice(),
+                Cursor::new(vec![]),
             )
             .await
             .unwrap();
@@ -83,14 +84,20 @@ async fn store_variant() {
         let variant = VariantMetadata::new(16, "text/plain");
 
         store
-            .create_resource(&path, "small file", &variant, HashSet::new(), content)
+            .create_resource(
+                &path,
+                "small file",
+                &variant,
+                HashSet::new(),
+                Cursor::new(content),
+            )
             .await
             .unwrap();
 
         let variant = VariantMetadata::new(16, "text/plain");
 
         store
-            .add_variant(&path, "reverse", &variant, variant_content)
+            .add_variant(&path, "reverse", &variant, Cursor::new(variant_content))
             .await
             .unwrap();
 
@@ -143,8 +150,8 @@ async fn import_file() {
 #[async_std::test]
 async fn get_metadata() {
     let path = ["small file".to_owned()];
-    let content = b"abcdef0123456789".as_slice();
-    let variant_content = b"9876543210fedcba".as_slice();
+    let content = Cursor::new(b"abcdef0123456789".as_slice());
+    let variant_content = Cursor::new(b"9876543210fedcba".as_slice());
 
     let num_test = 3;
     {
@@ -189,8 +196,8 @@ async fn get_metadata() {
 #[async_std::test]
 async fn search() {
     let path = ["small file".to_owned()];
-    let content = b"abcdef0123456789".as_slice();
-    let variant_content = b"9876543210fedcba".as_slice();
+    let content = Cursor::new(b"abcdef0123456789".as_slice());
+    let variant_content = Cursor::new(b"9876543210fedcba".as_slice());
 
     let num_test = 4;
     {
