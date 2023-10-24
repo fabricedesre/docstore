@@ -4,10 +4,14 @@
 //! - Full Text Index of resource description and mime type specific extraction.
 //! - Tag indexing
 
-use crate::resource::ResourceId;
+use crate::fts::text_plain_indexer;
+use crate::resource::{ResourceId, VariantMetadata};
 use crate::timer::Timer;
+use futures::io::AsyncSeekExt;
+use futures::AsyncRead;
 use log::{error, info};
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
+use std::io::SeekFrom;
 use std::path::Path;
 use thiserror::Error;
 
@@ -17,6 +21,8 @@ pub enum SqliteDbError {
     Rusqlite(#[from] rusqlite::Error),
     #[error("Error upgrading db schema from version `{0}` to version `{1}`")]
     SchemaUpgrade(u32, u32),
+    #[error("Indexer Error")]
+    Indexer(#[from] crate::fts::IndexerError),
 }
 
 static UPGRADE_0_1_SQL: [&str; 5] = [
@@ -111,20 +117,56 @@ impl Indexer {
     pub fn add_text(
         &mut self,
         id: &ResourceId,
-        variant: &str,
+        variant_name: &str,
         text: &str,
     ) -> Result<(), SqliteDbError> {
-        let _timer = Timer::start(&format!("Indexer add text {} to", id.to_string()));
+        let _timer = Timer::start(&format!(
+            "Indexer add text to {} [{}]",
+            id.to_string(),
+            variant_name
+        ));
 
         // Remove diacritics since the trigram tokenizer of SQlite doesn't have this option.
         let content = secular::lower_lay_string(text);
         self.conn
             .execute(
                 "INSERT INTO fts (id, variant, content) VALUES (?1, ?2, ?3)",
-                (id, variant, &content),
+                (id, variant_name, &content),
             )
             .map(|_| ())?;
         self.should_update = true;
+        Ok(())
+    }
+
+    pub async fn add_content<C: AsyncRead + AsyncSeekExt + Unpin>(
+        &mut self,
+        id: &ResourceId,
+        variant_name: &str,
+        variant: &VariantMetadata,
+        content: &mut C,
+    ) -> Result<(), SqliteDbError> {
+        let _timer = Timer::start(&format!(
+            "Indexer add content to {} [{}]",
+            id.to_string(),
+            variant_name
+        ));
+
+        let text = match variant.mime_type().as_str() {
+            "text/plain" => Some(text_plain_indexer(content).await?),
+            _ => None,
+        };
+
+        if let Some(text) = text {
+            {
+                self.add_text(id, variant_name, &text)?;
+            }
+        }
+
+        content
+            .seek(SeekFrom::Start(0))
+            .await
+            .expect("Failed to seek!!");
+
         Ok(())
     }
 

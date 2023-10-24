@@ -6,6 +6,7 @@ use crate::{file_store::FileStore, resource::ResourceMetadata};
 use async_std::{fs, path::Path};
 use async_stream::stream;
 use chrono::Utc;
+use futures::io::AsyncSeekExt;
 use futures::stream::LocalBoxStream;
 use futures::AsyncRead;
 use libipld::Cid;
@@ -272,13 +273,23 @@ impl ResourceStore {
         desc: &str,
         default_variant: &VariantMetadata,
         tags: HashSet<String>,
-        content: impl AsyncRead + Unpin,
+        mut content: impl AsyncRead + AsyncSeekExt + Unpin,
     ) -> Result<()> {
         let mut dir = self.resources_dir().await?;
         let now = Utc::now();
 
         // Create the resource metadata.
         let resource_metadata = ResourceMetadata::new(desc, default_variant, tags.clone());
+
+        let id = path.into();
+        self.indexer.add_resource(&id)?;
+        for tag in tags {
+            self.indexer.add_tag(&id, &tag)?;
+        }
+        self.indexer.add_text(&id, "default", desc)?;
+        self.indexer
+            .add_content(&id, "default", default_variant, &mut content)
+            .await?;
 
         let dir_name = dir.header.get_name().clone();
         let file = dir
@@ -312,13 +323,6 @@ impl ResourceStore {
             .store(&mut self.forest, &self.block_store, &mut self.rng)
             .await?;
 
-        let id = path.into();
-        self.indexer.add_resource(&id)?;
-        for tag in tags {
-            self.indexer.add_tag(&id, &tag)?;
-        }
-        self.indexer.add_text(&id, "default", desc)?;
-
         self.save_state().await
     }
 
@@ -328,7 +332,7 @@ impl ResourceStore {
         path: &[String],
         variant_name: &str,
         variant: &VariantMetadata,
-        content: impl AsyncRead + Unpin,
+        mut content: impl AsyncRead + AsyncSeekExt + Unpin,
     ) -> Result<()> {
         let mut dir = self.resources_dir().await?;
         let file = dir
@@ -349,6 +353,10 @@ impl ResourceStore {
         if let Some(Ok(mut resource_metadata)) = maybe_resource_metadata {
             resource_metadata.add_variant(variant_name, variant);
             file_metadata.put_serializable("res_meta", resource_metadata)?;
+
+            self.indexer
+                .add_content(&path.into(), variant_name, variant, &mut content)
+                .await?;
 
             let variant_content = PrivateForestContent::new_streaming(
                 &file_name,
@@ -473,7 +481,10 @@ impl ResourceStore {
 
         let reader = fs::File::open(full_path).await?;
         let reader_meta = reader.metadata().await?;
-        let variant = VariantMetadata::new(reader_meta.len(), "application/octet-stream");
+        let mime = mime_guess::from_path(path.as_ref()).first_or_octet_stream();
+
+        debug!("Mime type for {} is {}", path.as_ref().display(), mime);
+        let variant = VariantMetadata::new(reader_meta.len(), mime.as_ref());
 
         self.create_resource(
             &[file_name.to_string()],
