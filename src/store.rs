@@ -32,6 +32,8 @@ use wnfs::{
 pub enum StoreError {
     #[error("No such resource in store: {0:?}")]
     NoSuchResource(Vec<String>),
+    #[error("Invalid variant name: {0}")]
+    InvalidVariant(String),
     #[error("No variant '{0}' for this resource: {1:?}")]
     NoSuchVariant(String, Vec<String>),
     #[error("No content found for the '{0}' variant for {1:?}")]
@@ -334,6 +336,10 @@ impl ResourceStore {
         variant: &VariantMetadata,
         mut content: impl AsyncRead + AsyncSeekExt + Unpin,
     ) -> Result<()> {
+        if variant_name == "default" {
+            return Err(StoreError::InvalidVariant(variant_name.to_owned()));
+        }
+
         let mut dir = self.resources_dir().await?;
         let file = dir
             .open_file_mut(
@@ -382,11 +388,95 @@ impl ResourceStore {
         }
     }
 
+    /// Update a variant of an existing resource.
+    pub async fn update_variant(
+        &mut self,
+        path: &[String],
+        variant_name: &str,
+        variant: &VariantMetadata,
+        mut content: impl AsyncRead + AsyncSeekExt + Unpin,
+    ) -> Result<()> {
+        let mut dir = self.resources_dir().await?;
+        let dir_name = dir.header.get_name().clone();
+        let file = dir
+            .open_file_mut(
+                path,
+                true,
+                Utc::now(),
+                &mut self.forest,
+                &self.block_store,
+                &mut self.rng,
+            )
+            .await?;
+
+        if variant_name == "default" {
+            let now = Utc::now();
+
+            self.indexer
+                .update_variant(&path.into(), variant_name, variant, &mut content)
+                .await?;
+
+            // Special case for the default variant, updating the main file content.
+            let source = PrivateFile::with_content_streaming(
+                &dir_name,
+                now,
+                content,
+                &mut self.forest,
+                &self.block_store,
+                &mut self.rng,
+            )
+            .await?;
+
+            file.copy_content_from(&source, now);
+
+            dir.as_node()
+                .store(&mut self.forest, &self.block_store, &mut self.rng)
+                .await?;
+
+            return self.save_state().await;
+        }
+
+        let file_name = file.header.get_name().clone();
+        let file_metadata = file.get_metadata_mut();
+        let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
+            file_metadata.get_deserializable("res_meta");
+        if let Some(Ok(mut resource_metadata)) = maybe_resource_metadata {
+            resource_metadata.add_variant(variant_name, variant);
+            file_metadata.put_serializable("res_meta", resource_metadata)?;
+
+            self.indexer
+                .update_variant(&path.into(), variant_name, variant, &mut content)
+                .await?;
+
+            let variant_content = PrivateForestContent::new_streaming(
+                &file_name,
+                content,
+                &mut self.forest,
+                &self.block_store,
+                &mut self.rng,
+            )
+            .await?;
+
+            file_metadata.put(
+                &format!("{}_variant", variant_name),
+                variant_content.as_metadata_value()?,
+            );
+
+            dir.as_node()
+                .store(&mut self.forest, &self.block_store, &mut self.rng)
+                .await?;
+
+            self.save_state().await
+        } else {
+            Err(StoreError::NoResourceMetadata(path.to_vec()))
+        }
+    }
+
     /// Deletes a single variant from an existing resource.
     pub async fn delete_variant(&mut self, path: &[String], variant_name: &str) -> Result<()> {
-        // Deleting the default variant is the same as deleting the whole resource.
+        // Deleting the default variant is not allowed.
         if variant_name == "default" {
-            return self.delete_resource(path).await;
+            return Err(StoreError::InvalidVariant(variant_name.to_owned()));
         }
 
         let mut dir = self.resources_dir().await?;

@@ -203,6 +203,17 @@ impl Indexer {
         Ok(())
     }
 
+    pub async fn update_variant<C: AsyncRead + AsyncSeekExt + Unpin>(
+        &mut self,
+        id: &ResourceId,
+        variant_name: &str,
+        variant: &VariantMetadata,
+        content: &mut C,
+    ) -> Result<(), SqliteDbError> {
+        self.delete_variant(id, variant_name)?;
+        self.add_variant(id, variant_name, variant, content).await
+    }
+
     pub fn search(&self, text: &str) -> Result<Vec<ResourceId>, SqliteDbError> {
         let _timer = Timer::start(&format!("Indexer search {}", text));
 
