@@ -536,6 +536,78 @@ impl ResourceStore {
         self.save_state().await
     }
 
+    /// Add a tag to this resource.
+    pub async fn add_tag(&mut self, path: &[String], tag: &str) -> Result<()> {
+        let mut dir = self.resources_dir().await?;
+
+        let file = dir
+            .open_file_mut(
+                path,
+                true,
+                Utc::now(),
+                &mut self.forest,
+                &self.block_store,
+                &mut self.rng,
+            )
+            .await?;
+
+        let file_metadata = file.get_metadata_mut();
+
+        // Get the private forest content for that resource.
+        let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
+            file_metadata.get_deserializable("res_meta");
+        if let Some(Ok(mut resource_metadata)) = maybe_resource_metadata {
+            resource_metadata.add_tag(tag);
+            file_metadata.put_serializable("res_meta", resource_metadata)?;
+        } else {
+            return Err(StoreError::NoResourceMetadata(path.to_vec()));
+        }
+
+        dir.as_node()
+            .store(&mut self.forest, &self.block_store, &mut self.rng)
+            .await?;
+
+        self.indexer.add_tag(&path.into(), tag)?;
+
+        self.save_state().await
+    }
+
+    /// Remove a tag from this resource.
+    pub async fn remove_tag(&mut self, path: &[String], tag: &str) -> Result<()> {
+        let mut dir = self.resources_dir().await?;
+
+        let file = dir
+            .open_file_mut(
+                path,
+                true,
+                Utc::now(),
+                &mut self.forest,
+                &self.block_store,
+                &mut self.rng,
+            )
+            .await?;
+
+        let file_metadata = file.get_metadata_mut();
+
+        // Get the private forest content for that resource.
+        let maybe_resource_metadata: Option<IpldResult<ResourceMetadata>> =
+            file_metadata.get_deserializable("res_meta");
+        if let Some(Ok(mut resource_metadata)) = maybe_resource_metadata {
+            resource_metadata.remove_tag(tag);
+            file_metadata.put_serializable("res_meta", resource_metadata)?;
+        } else {
+            return Err(StoreError::NoResourceMetadata(path.to_vec()));
+        }
+
+        dir.as_node()
+            .store(&mut self.forest, &self.block_store, &mut self.rng)
+            .await?;
+
+        self.indexer.remove_tag(&path.into(), tag)?;
+
+        self.save_state().await
+    }
+
     /// Retrieves the content for this path and variant as a bytes vector.
     /// Should only be used for small variant sizes.
     pub async fn get_variant_vec(&self, variant_name: &str, path: &[String]) -> Result<Vec<u8>> {

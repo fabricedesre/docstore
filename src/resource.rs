@@ -125,6 +125,14 @@ impl ResourceMetadata {
         self.variants.remove(name).is_some()
     }
 
+    pub fn add_tag(&mut self, tag: &str) {
+        self.tags.insert(tag.into());
+    }
+
+    pub fn remove_tag(&mut self, tag: &str) {
+        self.tags.remove(tag);
+    }
+
     pub fn tags(&self) -> &HashSet<String> {
         &self.tags
     }

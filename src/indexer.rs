@@ -142,6 +142,15 @@ impl Indexer {
         Ok(())
     }
 
+    pub fn remove_tag(&mut self, id: &ResourceId, tag: &str) -> Result<(), SqliteDbError> {
+        let _timer = Timer::start(&format!("Indexer remove tag {} to {}", tag, id.to_string()));
+        self.conn
+            .execute("DELETE FROM tags WHERE id=?1 and tag=?2", (id, tag))
+            .map(|_| ())?;
+        self.should_update = true;
+        Ok(())
+    }
+
     pub fn add_text(
         &mut self,
         id: &ResourceId,

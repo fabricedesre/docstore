@@ -556,7 +556,7 @@ async fn update_default_variant() {
     let variant_content = b"9876543210fedcba".as_slice();
     let updated_content = b"this is updated content".as_slice();
 
-    let num_test = 9;
+    let num_test = 10;
     {
         // Create a resource with 2 variants.
         let mut store = init_test(num_test).await;
@@ -627,5 +627,51 @@ async fn update_default_variant() {
         // Check that the medata still has 2 variants.
         let meta = store.get_metadata(&path).await.unwrap();
         assert_eq!(meta.variants().len(), 2);
+    }
+}
+
+#[async_std::test]
+async fn add_remove_tags() {
+    let num_test = 11;
+    let path = ["tag demo".to_owned()];
+    {
+        let mut store = init_test(num_test).await;
+
+        let variant = VariantMetadata::new(0, "application/octet-stream");
+
+        store
+            .create_resource(
+                &path,
+                "empty file",
+                &variant,
+                HashSet::new(),
+                Cursor::new(vec![]),
+            )
+            .await
+            .unwrap();
+
+        let content = store.get_variant_vec("default", &path).await.unwrap();
+        assert_eq!(content.len(), 0);
+
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.tags().len(), 0);
+
+        store.add_tag(&path, "tag-1").await.unwrap();
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.tags().len(), 1);
+
+        store.add_tag(&path, "tag-2").await.unwrap();
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.tags().len(), 2);
+
+        store.remove_tag(&path, "tag-1").await.unwrap();
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.tags().len(), 1);
+    }
+
+    {
+        let store: ResourceStore = get_test_store(num_test).await;
+        let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.tags().iter().next(), Some(&"tag-2".to_owned()));
     }
 }
