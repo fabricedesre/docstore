@@ -1,11 +1,11 @@
-use async_std::io::Cursor;
 use core::future;
 use docstore::resource::VariantMetadata;
 use docstore::store::ResourceStore;
 use futures::TryStreamExt;
 use std::collections::HashSet;
-use std::io::Read;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
+use tokio_util::compat::TokioAsyncReadCompatExt;
 
 async fn get_test_store(num: u32) -> ResourceStore {
     ResourceStore::new(&format!("./tests/data{}", num))
@@ -31,7 +31,7 @@ fn fixture_file<P: AsRef<Path>>(path: P) -> Cursor<Vec<u8>> {
     Cursor::new(buffer)
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn store_empty_file() {
     let num_test = 0;
     let path = ["empty".to_owned()];
@@ -47,7 +47,7 @@ async fn store_empty_file() {
                 "empty file",
                 &variant,
                 HashSet::new(),
-                Cursor::new(vec![]),
+                Cursor::new(vec![]).compat(),
             )
             .await
             .unwrap();
@@ -78,7 +78,7 @@ async fn store_empty_file() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn store_variant() {
     let path = ["small file".to_owned()];
     let content = b"abcdef0123456789".as_slice();
@@ -97,7 +97,7 @@ async fn store_variant() {
                 "small file",
                 &variant,
                 HashSet::new(),
-                Cursor::new(content),
+                Cursor::new(content).compat(),
             )
             .await
             .unwrap();
@@ -105,7 +105,12 @@ async fn store_variant() {
         let variant = VariantMetadata::new(16, "text/plain");
 
         store
-            .add_variant(&path, "reverse", &variant, Cursor::new(variant_content))
+            .add_variant(
+                &path,
+                "reverse",
+                &variant,
+                Cursor::new(variant_content).compat(),
+            )
             .await
             .unwrap();
 
@@ -128,7 +133,7 @@ async fn store_variant() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn import_file() {
     let path = ["hello.txt".to_owned()];
 
@@ -155,7 +160,7 @@ async fn import_file() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn get_metadata() {
     let path = ["small file".to_owned()];
     let content = Cursor::new(b"abcdef0123456789".as_slice());
@@ -173,14 +178,14 @@ async fn get_metadata() {
         tags.insert("tag_2".to_owned());
 
         store
-            .create_resource(&path, "small file", &variant, tags, content)
+            .create_resource(&path, "small file", &variant, tags, content.compat())
             .await
             .unwrap();
 
         let variant = VariantMetadata::new(16, "text/plain");
 
         store
-            .add_variant(&path, "reverse", &variant, variant_content)
+            .add_variant(&path, "reverse", &variant, variant_content.compat())
             .await
             .unwrap();
 
@@ -201,7 +206,7 @@ async fn get_metadata() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn search() {
     let path = ["small file".to_owned()];
     let content = Cursor::new(b"abcdef0123456789".as_slice());
@@ -219,14 +224,14 @@ async fn search() {
         tags.insert("tag_2".to_owned());
 
         store
-            .create_resource(&path, "small file", &variant, tags, content)
+            .create_resource(&path, "small file", &variant, tags, content.compat())
             .await
             .unwrap();
 
         let variant = VariantMetadata::new(16, "text/plain");
 
         store
-            .add_variant(&path, "reverse", &variant, variant_content)
+            .add_variant(&path, "reverse", &variant, variant_content.compat())
             .await
             .unwrap();
 
@@ -259,7 +264,7 @@ async fn search() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn index_place() {
     let path = ["place test".to_owned()];
 
@@ -277,7 +282,7 @@ async fn index_place() {
                 "sample place document",
                 &variant,
                 HashSet::new(),
-                content,
+                content.compat(),
             )
             .await
             .unwrap();
@@ -300,7 +305,7 @@ async fn index_place() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn index_contact() {
     let path = ["contact test".to_owned()];
 
@@ -312,7 +317,13 @@ async fn index_contact() {
         let variant = VariantMetadata::new(16, "application/x-contact+json");
 
         store
-            .create_resource(&path, "sample contact", &variant, HashSet::new(), content)
+            .create_resource(
+                &path,
+                "sample contact",
+                &variant,
+                HashSet::new(),
+                content.compat(),
+            )
             .await
             .unwrap();
 
@@ -341,7 +352,7 @@ async fn index_contact() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn delete_resource() {
     let path = ["contact test".to_owned()];
 
@@ -353,7 +364,13 @@ async fn delete_resource() {
         let variant = VariantMetadata::new(16, "application/x-contact+json");
 
         store
-            .create_resource(&path, "sample contact", &variant, HashSet::new(), content)
+            .create_resource(
+                &path,
+                "sample contact",
+                &variant,
+                HashSet::new(),
+                content.compat(),
+            )
             .await
             .unwrap();
 
@@ -383,7 +400,7 @@ async fn delete_resource() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn delete_variant() {
     let path = ["small file".to_owned()];
     let content = b"abcdef0123456789".as_slice();
@@ -402,7 +419,7 @@ async fn delete_variant() {
                 "small file",
                 &variant,
                 HashSet::new(),
-                Cursor::new(content),
+                Cursor::new(content).compat(),
             )
             .await
             .unwrap();
@@ -410,7 +427,12 @@ async fn delete_variant() {
         let variant = VariantMetadata::new(16, "text/plain");
 
         store
-            .add_variant(&path, "reverse", &variant, Cursor::new(variant_content))
+            .add_variant(
+                &path,
+                "reverse",
+                &variant,
+                Cursor::new(variant_content).compat(),
+            )
             .await
             .unwrap();
 
@@ -460,7 +482,7 @@ async fn delete_variant() {
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn update_variant() {
     let path = ["small file".to_owned()];
     let content = b"abcdef0123456789".as_slice();
@@ -480,7 +502,7 @@ async fn update_variant() {
                 "small file",
                 &variant,
                 HashSet::new(),
-                Cursor::new(content),
+                Cursor::new(content).compat(),
             )
             .await
             .unwrap();
@@ -488,7 +510,12 @@ async fn update_variant() {
         let variant = VariantMetadata::new(content.len() as _, "text/plain");
 
         store
-            .add_variant(&path, "reverse", &variant, Cursor::new(variant_content))
+            .add_variant(
+                &path,
+                "reverse",
+                &variant,
+                Cursor::new(variant_content).compat(),
+            )
             .await
             .unwrap();
 
@@ -510,7 +537,12 @@ async fn update_variant() {
         let variant = VariantMetadata::new(updated_content.len() as _, "text/plain");
 
         store
-            .update_variant(&path, "reverse", &variant, Cursor::new(updated_content))
+            .update_variant(
+                &path,
+                "reverse",
+                &variant,
+                Cursor::new(updated_content).compat(),
+            )
             .await
             .unwrap();
 
@@ -546,10 +578,14 @@ async fn update_variant() {
         // Search for the new "reverse" variant content.
         let result = store.search("updated").await.unwrap();
         assert_eq!(result.len(), 1);
+
+        // Get the updated variant content.
+        let fetched = store.get_variant_vec("reverse", &path).await.unwrap();
+        assert_eq!(&fetched, updated_content);
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn update_default_variant() {
     let path = ["small file".to_owned()];
     let content = b"abcdef0123456789".as_slice();
@@ -569,7 +605,7 @@ async fn update_default_variant() {
                 "small file",
                 &variant,
                 HashSet::new(),
-                Cursor::new(content),
+                Cursor::new(content).compat(),
             )
             .await
             .unwrap();
@@ -577,7 +613,12 @@ async fn update_default_variant() {
         let variant = VariantMetadata::new(content.len() as _, "text/plain");
 
         store
-            .add_variant(&path, "reverse", &variant, Cursor::new(variant_content))
+            .add_variant(
+                &path,
+                "reverse",
+                &variant,
+                Cursor::new(variant_content).compat(),
+            )
             .await
             .unwrap();
 
@@ -599,7 +640,12 @@ async fn update_default_variant() {
         let variant = VariantMetadata::new(updated_content.len() as _, "text/plain");
 
         store
-            .update_variant(&path, "default", &variant, Cursor::new(updated_content))
+            .update_variant(
+                &path,
+                "default",
+                &variant,
+                Cursor::new(updated_content).compat(),
+            )
             .await
             .unwrap();
 
@@ -627,10 +673,22 @@ async fn update_default_variant() {
         // Check that the medata still has 2 variants.
         let meta = store.get_metadata(&path).await.unwrap();
         assert_eq!(meta.variants().len(), 2);
+
+        // Search for the old "reverse" variant content.
+        let result = store.search("abcdef").await.unwrap();
+        assert_eq!(result.len(), 0);
+
+        // Search for the new "reverse" variant content.
+        let result = store.search("updated").await.unwrap();
+        assert_eq!(result.len(), 1);
+
+        // Get the updated variant content.
+        let fetched = store.get_variant_vec("default", &path).await.unwrap();
+        assert_eq!(&fetched, updated_content);
     }
 }
 
-#[async_std::test]
+#[tokio::test]
 async fn add_remove_tags() {
     let num_test = 11;
     let path = ["tag demo".to_owned()];
@@ -645,7 +703,7 @@ async fn add_remove_tags() {
                 "empty file",
                 &variant,
                 HashSet::new(),
-                Cursor::new(vec![]),
+                Cursor::new(vec![]).compat(),
             )
             .await
             .unwrap();
@@ -672,6 +730,7 @@ async fn add_remove_tags() {
     {
         let store: ResourceStore = get_test_store(num_test).await;
         let meta = store.get_metadata(&path).await.unwrap();
+        assert_eq!(meta.tags().len(), 1);
         assert_eq!(meta.tags().iter().next(), Some(&"tag-2".to_owned()));
     }
 }

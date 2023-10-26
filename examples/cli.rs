@@ -26,7 +26,7 @@ fn print_resource_details(id: &str, meta: &ResourceMetadata) {
     println!("{}", out);
 }
 
-#[async_std::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), StoreError> {
     env_logger::init();
     let mut doc_store = ResourceStore::new("./data").await?;

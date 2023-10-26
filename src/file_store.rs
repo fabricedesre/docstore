@@ -1,10 +1,10 @@
 //! A file backed store for wnfs
 
-use async_std::fs;
-use async_std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use bytes::Bytes;
 use libipld::Cid;
+use std::path::{Path, PathBuf};
+use tokio::fs;
 use wnfs::common::BlockStore;
 
 type IpldError = libipld::error::Error;
@@ -17,7 +17,7 @@ impl FileStore {
     pub async fn maybe_new<P: AsRef<Path>>(root: P) -> Result<Self, std::io::Error> {
         // Check if the root directory exists, or try to create it.
         let root = root.as_ref();
-        if !root.exists().await {
+        if !root.exists() {
             fs::create_dir(root).await?;
         }
 

@@ -3,7 +3,6 @@
 use crate::indexer::{Indexer, SqliteDbError};
 use crate::resource::{ResourceId, VariantMetadata};
 use crate::{file_store::FileStore, resource::ResourceMetadata};
-use async_std::{fs, path::Path};
 use async_stream::stream;
 use chrono::Utc;
 use futures::io::AsyncSeekExt;
@@ -15,9 +14,11 @@ use rand::{rngs::ThreadRng, thread_rng};
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashSet;
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use thiserror::Error;
+use tokio::fs;
+use tokio_util::compat::TokioAsyncReadCompatExt;
 use wnfs::{
     common::BlockStore,
     nameaccumulator::AccumulatorSetup,
@@ -114,7 +115,7 @@ impl ResourceStore {
     /// The root directory and required sub directories will be created
     /// if they don't already exist.
     pub async fn new<P: AsRef<Path>>(root_dir: P) -> Result<Self> {
-        if !root_dir.as_ref().exists().await {
+        if !root_dir.as_ref().exists() {
             fs::create_dir(&root_dir).await?;
         }
 
@@ -232,7 +233,7 @@ impl ResourceStore {
             let source = PrivateFile::with_content_streaming(
                 &dir_name,
                 now,
-                reader,
+                reader.compat(),
                 &mut self.forest,
                 &self.block_store,
                 &mut self.rng,
@@ -717,7 +718,7 @@ impl ResourceStore {
             &full_path.display().to_string(),
             &variant,
             HashSet::new(),
-            reader,
+            reader.compat(),
         )
         .await
     }
