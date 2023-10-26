@@ -1,13 +1,12 @@
 //! Private resources store api
 
 use crate::indexer::{Indexer, SqliteDbError};
-use crate::resource::{ResourceId, VariantMetadata};
+use crate::resource::{ContentReader, ResourceId, VariantMetadata};
+use crate::transformers::{run_transformers, TransformerResult, VariantChange};
 use crate::{file_store::FileStore, resource::ResourceMetadata};
 use async_stream::stream;
 use chrono::Utc;
-use futures::io::AsyncSeekExt;
 use futures::stream::LocalBoxStream;
-use futures::AsyncRead;
 use libipld::Cid;
 use log::debug;
 use rand::{rngs::ThreadRng, thread_rng};
@@ -269,6 +268,34 @@ impl ResourceStore {
         }
     }
 
+    /// Apply the output of variant transformers for this resource.
+    pub async fn apply_variant_transforms(
+        &mut self,
+        path: &[String],
+        transforms: Vec<TransformerResult>,
+    ) -> Result<()> {
+        for transform in transforms {
+            match transform {
+                TransformerResult::Delete(variant_name) => {
+                    self.delete_variant(path, &variant_name).await?
+                }
+                TransformerResult::Create(variant) => {
+                    if variant.name != "default" {
+                        self.add_variant(path, &variant.name, &variant.meta, variant.content)
+                            .await?
+                    }
+                }
+                TransformerResult::Update(variant) => {
+                    if variant.name != "default" {
+                        self.update_variant(path, &variant.name, &variant.meta, variant.content)
+                            .await?
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Add a resource with a default variant content.
     pub async fn create_resource(
         &mut self,
@@ -276,7 +303,7 @@ impl ResourceStore {
         desc: &str,
         default_variant: &VariantMetadata,
         tags: HashSet<String>,
-        mut content: impl AsyncRead + AsyncSeekExt + Unpin,
+        mut content: impl ContentReader,
     ) -> Result<()> {
         let mut dir = self.resources_dir().await?;
         let now = Utc::now();
@@ -293,6 +320,10 @@ impl ResourceStore {
         self.indexer
             .add_variant(&id, "default", default_variant, &mut content)
             .await?;
+
+        // Collect the results from the variant transformers.
+        let mut variant_change = VariantChange::Created(default_variant.clone());
+        let transformer_results = run_transformers(&mut variant_change, &mut content).await;
 
         let dir_name = dir.header.get_name().clone();
         let file = dir
@@ -326,6 +357,11 @@ impl ResourceStore {
             .store(&mut self.forest, &self.block_store, &mut self.rng)
             .await?;
 
+        // Apply the variant transformers. This needs to be done after the
+        // resource is fully created.
+        self.apply_variant_transforms(path, transformer_results)
+            .await?;
+
         self.save_state().await
     }
 
@@ -335,7 +371,7 @@ impl ResourceStore {
         path: &[String],
         variant_name: &str,
         variant: &VariantMetadata,
-        mut content: impl AsyncRead + AsyncSeekExt + Unpin,
+        mut content: impl ContentReader,
     ) -> Result<()> {
         if variant_name == "default" {
             return Err(StoreError::InvalidVariant(variant_name.to_owned()));
@@ -395,7 +431,7 @@ impl ResourceStore {
         path: &[String],
         variant_name: &str,
         variant: &VariantMetadata,
-        mut content: impl AsyncRead + AsyncSeekExt + Unpin,
+        mut content: impl ContentReader,
     ) -> Result<()> {
         let mut dir = self.resources_dir().await?;
         let dir_name = dir.header.get_name().clone();

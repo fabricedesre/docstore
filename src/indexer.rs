@@ -5,10 +5,9 @@
 //! - Tag indexing
 
 use crate::fts::{json_indexer, text_plain_indexer};
-use crate::resource::{ResourceId, VariantMetadata};
+use crate::resource::{ResourceId, VariantMetadata, ContentReader};
 use crate::timer::Timer;
 use futures::io::AsyncSeekExt;
-use futures::AsyncRead;
 use log::{error, info};
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use std::io::SeekFrom;
@@ -175,7 +174,7 @@ impl Indexer {
         Ok(())
     }
 
-    pub async fn add_variant<C: AsyncRead + AsyncSeekExt + Unpin>(
+    pub async fn add_variant<C: ContentReader>(
         &mut self,
         id: &ResourceId,
         variant_name: &str,
@@ -212,7 +211,7 @@ impl Indexer {
         Ok(())
     }
 
-    pub async fn update_variant<C: AsyncRead + AsyncSeekExt + Unpin>(
+    pub async fn update_variant<C: ContentReader>(
         &mut self,
         id: &ResourceId,
         variant_name: &str,

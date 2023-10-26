@@ -734,3 +734,34 @@ async fn add_remove_tags() {
         assert_eq!(meta.tags().iter().next(), Some(&"tag-2".to_owned()));
     }
 }
+
+#[tokio::test]
+async fn image_transformer() {
+    let path = ["sticker_logo_small.png".to_owned()];
+
+    let num_test = 12;
+    {
+        let mut store = init_test(num_test).await;
+
+        store
+            .import_file("./tests/fixtures/sticker_logo_small.png")
+            .await
+            .unwrap();
+
+        let metadata = store.get_metadata(&path).await.unwrap();
+        let variants = metadata.variants();
+        assert_eq!(variants.len(), 2);
+        assert!(variants.contains_key("default"));
+        assert!(variants.contains_key("thumbnail"));
+    }
+
+    {
+        let store = get_test_store(num_test).await;
+
+        let metadata = store.get_metadata(&path).await.unwrap();
+        let variants = metadata.variants();
+        assert_eq!(variants.len(), 2);
+        assert!(variants.contains_key("default"));
+        assert!(variants.contains_key("thumbnail"));
+    }
+}

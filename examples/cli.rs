@@ -16,7 +16,7 @@ fn print_resource_details(id: &str, meta: &ResourceMetadata) {
     let mut out = format!("{} - {}b ", id, size);
     for (name, variant_meta) in variants {
         out.push_str(&format!(
-            "[{} : {} : {}b]",
+            "[{}: {} {}b] ",
             name,
             variant_meta.mime_type(),
             variant_meta.size()

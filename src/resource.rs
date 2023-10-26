@@ -1,8 +1,18 @@
 //! Resource representation
 
+use futures::io::AsyncSeek;
+use futures::AsyncRead;
 use rusqlite::types::{FromSql, FromSqlError, ToSqlOutput, ValueRef};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use tokio_util::compat::Compat;
+
+pub trait ContentReader: AsyncRead + AsyncSeek + Unpin {}
+
+// Default implementations for types used internally
+impl<T: AsRef<[u8]> + Unpin> ContentReader for Compat<std::io::Cursor<T>> {}
+impl <T: ContentReader> ContentReader for Box<T> {}
+impl ContentReader for Compat<tokio::fs::File> {}
 
 /// Type used to represent a unique id for a resource.
 /// Currently using the resource path.
